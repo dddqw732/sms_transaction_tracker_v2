@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cash-In - Multi-Company Transaction Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=8">
+</head>
+<body class="light-theme">
+    <section id="landing-view" class="auth-shell landing-shell">
+        <div class="landing-overlay"></div>
+        <div class="landing-content">
+            <div class="landing-brand">Cash-In</div>
+            <h1>Track Every Transaction. <span>Own Your Company Data.</span></h1>
+            <p class="landing-text">
+                Built for businesses that need real-time financial visibility with strict company isolation.
+                Register your company, receive a unique Company Code, and log in securely with Company Code + password.
+            </p>
+            <div class="landing-actions">
+                <button id="go-login-btn" class="btn btn-primary">Log In</button>
+                <button id="go-signup-btn" class="btn btn-secondary">Create Company</button>
+            </div>
+            <div class="landing-pillars">
+                <div class="landing-pillar">
+                    <h3>Unique Company Code</h3>
+                    <p>Auto-generated per company and always unique.</p>
+                </div>
+                <div class="landing-pillar">
+                    <h3>Tenant Isolation</h3>
+                    <p>Each company can access only its own dashboard data.</p>
+                </div>
+                <div class="landing-pillar">
+                    <h3>Realtime Dashboard</h3>
+                    <p>Live transaction stream, summaries, invoices, and exports.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="auth-view" class="auth-shell hidden">
+        <div class="auth-card-wrap">
+            <div class="auth-brand-block">
+                <div class="auth-logo">CI</div>
+                <div>
+                    <h2>Cash-In Portal</h2>
+                    <p>Use Company Code and password to access your workspace.</p>
+                </div>
+            </div>
+
+            <div class="auth-tab-row">
+                <button id="tab-login-btn" class="auth-tab active">Login</button>
+                <button id="tab-signup-btn" class="auth-tab">Sign Up</button>
+            </div>
+
+            <div id="auth-message" class="auth-message hidden"></div>
+
+            <form id="login-form" class="auth-form">
+                <label>Company Code</label>
+                <input id="login-company-code" type="text" class="custom-input" placeholder="e.g. BAR001" required>
+
+                <label>Password</label>
+                <input id="login-password" type="password" class="custom-input" placeholder="Enter password" required>
+
+                <button type="submit" class="btn btn-primary btn-full">Login to Dashboard</button>
+                <button id="back-to-landing-login" type="button" class="btn btn-text btn-full">Back to Landing</button>
+            </form>
+
+            <form id="signup-form" class="auth-form hidden">
+                <label>Company Name</label>
+                <input id="signup-company-name" type="text" class="custom-input" placeholder="Barwaaqo Trading" required>
+
+                <label>City</label>
+                <input id="signup-city" type="text" class="custom-input" placeholder="Hargeisa" required>
+
+
+                <label>Initial Subscription Plan</label>
+                <select id="signup-plan" class="custom-select" required>
+                    <option value="Starter">Starter</option>
+                    <option value="Growth">Growth</option>
+                    <option value="Enterprise">Enterprise</option>
+                </select>
+
+                <label>Password</label>
+                <input id="signup-password" type="password" class="custom-input" minlength="6" required>
+
+                <label>Status</label>
+                <select id="signup-status" class="custom-select" required>
+                    <option value="Active">Active</option>
+                    <option value="Suspended">Suspended</option>
+                </select>
+
+                <button type="submit" class="btn btn-primary btn-full">Create Company</button>
+                <button id="back-to-landing-signup" type="button" class="btn btn-text btn-full">Back to Landing</button>
+            </form>
+
+            <div id="signup-success" class="signup-success hidden">
+                <h3>Company Created</h3>
+                <p>Your Company Code is:</p>
+                <div id="generated-company-code" class="generated-code">---</div>
+                <p class="text-muted">Use this Company Code to log in.</p>
+            </div>
+        </div>
+    </section>
+
+    <div id="dashboard-app" class="app-container hidden">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo-icon">
+                    <img src="logo.png" alt="Cash-In Logo" style="width: 32px; height: 32px; object-fit: contain;">
+                </div>
+                <div class="brand-text">
+                    <h1>Cash-In</h1>
+                    <span>Live Transaction Tracker</span>
+                </div>
+            </div>
+
+            <div class="status-card">
+                <div class="pulse-indicator disconnected" id="connection-pulse"></div>
+                <span class="status-label" id="connection-text">Connecting...</span>
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-btn active" data-target="tab-dashboard" data-title="Dashboard">Dashboard</button>
+                <button class="nav-btn" data-target="tab-ledger" data-title="Ledger">Ledger</button>
+                <button class="nav-btn" data-target="tab-summary" data-title="Summary">Summary</button>
+                <button class="nav-btn" data-target="tab-invoices" data-title="Invoices">Invoices</button>
+                <button class="nav-btn" data-target="tab-settings" data-title="Settings">Settings</button>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-header">
+                <h2 id="page-title">Dashboard</h2>
+                <div class="header-actions">
+                    <div class="current-time" id="live-time">June 24, 2026</div>
+                    <div id="company-chip" class="company-chip">---</div>
+                    <button id="logout-btn" class="btn btn-text">Logout</button>
+                </div>
+            </header>
+
+            <section id="tab-dashboard" class="tab-content active">
+                <section class="metrics-grid">
+                    <div class="metric-card"><div class="metric-info"><h3>Total Transactions</h3><p class="metric-value" id="stat-total-count">0</p></div></div>
+                    <div class="metric-card clickable" onclick="showDateFilterModal('received')" style="cursor: pointer;"><div class="metric-info"><h3>Total Received</h3><p class="metric-value text-success" id="stat-total-received">0.00</p></div></div>
+                    <div class="metric-card clickable" onclick="showDateFilterModal('sent')" style="cursor: pointer;"><div class="metric-info"><h3>Total Sent</h3><p class="metric-value text-danger" id="stat-total-sent">0.00</p></div></div>
+                    <div class="metric-card clickable" onclick="showDateFilterModal('balance')" style="cursor: pointer;"><div class="metric-info"><h3>Net Balance</h3><p class="metric-value text-success" id="stat-net-balance">+ 0.00</p></div></div>
+                </section>
+                <section class="recent-transactions">
+                    <div class="section-header"><h3>Recent Transactions</h3><button class="btn btn-text" onclick="document.querySelector('[data-target=\'tab-ledger\']').click()">View All</button></div>
+                    <div class="ledger-container"><div class="empty-state hidden" id="dashboard-empty"><p>No transactions yet.</p></div><div class="ledger-list" id="dashboard-recent-list"></div></div>
+                </section>
+            </section>
+
+            <section id="tab-ledger" class="tab-content">
+                <div class="ledger-controls-row">
+                    <div class="search-box"><input type="text" id="search-input" placeholder="Search sender, amount..."></div>
+                    <select id="provider-filter" class="custom-select">
+                        <option value="">All Providers</option>
+                        <option value="EVC Plus">EVC Plus</option>
+                        <option value="eDahab">eDahab</option>
+                        <option value="ZAAD">ZAAD</option>
+                        <option value="Sahal">Sahal</option>
+                    </select>
+                    <div class="sort-row">
+                        <select id="sort-by" class="custom-select"><option value="timestamp">Date & Time</option><option value="amount">Amount</option><option value="provider">Provider</option></select>
+                        <button id="sort-order-btn" class="icon-btn" title="Toggle Sort Order"><svg id="sort-desc-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5V19M12 19L19 12M12 19L5 12"></path></svg></button>
+                    </div>
+                </div>
+                <div class="type-filter-group">
+                    <button class="filter-btn active" data-type="">All Transactions</button>
+                    <button class="filter-btn" data-type="Received"><span class="dot received"></span>Received</button>
+                    <button class="filter-btn" data-type="Sent"><span class="dot sent"></span>Sent</button>
+                    <button class="btn btn-text" id="reset-btn" style="margin-left: auto;">Reset</button>
+                </div>
+                <div class="ledger-container" id="ledger-container">
+                    <div class="empty-state" id="ledger-loader"><div class="spinner"></div><p>Loading transactions...</p></div>
+                    <div class="empty-state hidden" id="ledger-empty"><p>No transactions found matching the filters.</p></div>
+                    <div class="ledger-list hidden" id="ledger-list"></div>
+                </div>
+            </section>
+
+            <section id="tab-summary" class="tab-content">
+                <div class="summary-report-controls">
+                    <div class="report-control"><label for="report-type-select">Report Type</label><select id="report-type-select" class="custom-select"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>
+                    <div class="report-control"><label for="compare-type-select">Compare</label><select id="compare-type-select" class="custom-select"><option value="none">None</option><option value="previous">Previous Period</option></select></div>
+                    <button id="generate-report-btn" class="btn btn-primary">Generate Report</button>
+                </div>
+                <div class="summary-metrics-grid">
+                    <div class="metric-card report-metric"><div class="metric-info"><h3>Period Received</h3><p class="metric-value text-success" id="report-total-received">0.00</p></div></div>
+                    <div class="metric-card report-metric"><div class="metric-info"><h3>Period Sent</h3><p class="metric-value text-danger" id="report-total-sent">0.00</p></div></div>
+                    <div class="metric-card report-metric"><div class="metric-info"><h3>Net Change</h3><p class="metric-value" id="report-net-change">0.00</p></div></div>
+                </div>
+                <div class="summary-chart-section"><div class="summary-chart-card"><div class="chart-header"><h4>Report Trend</h4></div><div id="report-chart" class="report-chart"></div></div><div id="comparison-summary" class="comparison-summary hidden"></div></div>
+                <div id="summary-content" class="summary-grid"></div>
+            </section>
+
+            <section id="tab-invoices" class="tab-content">
+                <div class="invoices-controls"><button id="create-invoice-btn" class="btn btn-primary">+ Create Invoice</button><input type="text" id="invoice-search" placeholder="Search invoices..." class="search-input"></div>
+                <div class="invoices-container"><div class="empty-state" id="invoices-empty"><p>No invoices yet. Create one to get started!</p></div><div class="invoices-list" id="invoices-list"></div></div>
+            </section>
+
+            <section id="tab-settings" class="tab-content">
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <h3>📡 SMS Webhook Integration</h3>
+                        <p class="text-muted">Use this endpoint in your SMS forwarder app (e.g. SMS to Webhook) to automatically receive transactions.</p>
+                        <div class="input-group" style="margin-top:12px;">
+                            <label>Your Webhook URL</label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="text" id="webhook-url-display" class="settings-input" readonly style="font-family:monospace;font-size:13px;flex:1;">
+                                <button id="copy-webhook-btn" class="btn btn-secondary" style="white-space:nowrap;">Copy</button>
+                            </div>
+                        </div>
+                        <div style="margin-top:16px;padding:12px 14px;background:rgba(99,102,241,0.07);border-radius:10px;font-size:13px;">
+                            <strong>Setup Guide:</strong>
+                            <ol style="margin:8px 0 0 16px;line-height:1.7;">
+                                <li>Open your SMS forwarder app</li>
+                                <li>Add a new <b>Webhook channel</b></li>
+                                <li>Set <b>Method</b> to <code>POST</code></li>
+                                <li>Set <b>Content-Type</b> to <code>application/json</code></li>
+                                <li>Paste your webhook URL above as the <b>Endpoint URL</b></li>
+                                <li>Set body template:<br>
+                                    <code style="font-size:11px;display:block;margin-top:4px;white-space:pre;">{"from":"{{from}}","content":"{{content}}"}</code>
+                                </li>
+                                <li>Save and enable the channel ✅</li>
+                            </ol>
+                        </div>
+                    </div>
+                    <div class="settings-card"><h3>Connection Settings</h3><p class="text-muted">Session authenticated for your company workspace.</p><div class="input-group"><label>Server Base URL</label><input type="text" value="/api" disabled class="settings-input"></div></div>
+                    <div class="settings-card danger-zone"><h3>Danger Zone</h3><p class="text-muted">Permanently delete all transaction data for your company.</p><button id="clear-db-btn" class="btn btn-danger">Clear Company Data</button></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="details-modal" class="modal hidden"><div class="modal-overlay" id="modal-overlay"></div><div class="modal-container"><div class="modal-header"><h3>Transaction Details</h3><button class="close-btn" id="modal-close-btn">&times;</button></div><div class="modal-body" id="modal-body-content"></div></div></div>
+    <div id="date-filter-modal" class="modal hidden"><div class="modal-overlay" id="date-filter-overlay"></div><div class="modal-container"><div class="modal-header"><h3>Filter by Date</h3><button class="close-btn" id="date-filter-close">&times;</button></div><div class="modal-body"><div class="date-filter-group"><label>Start Date</label><input type="date" id="filter-start-date" class="custom-input"></div><div class="date-filter-group"><label>End Date</label><input type="date" id="filter-end-date" class="custom-input"></div><div class="modal-actions"><button id="apply-filter-btn" class="btn btn-primary">Apply Filter</button><button id="export-filter-btn" class="btn btn-secondary">Export to Excel</button></div></div></div></div>
+    <div id="invoice-modal" class="modal hidden"><div class="modal-overlay" id="invoice-overlay"></div><div class="modal-container"><div class="modal-header"><h3>Create Invoice</h3><button class="close-btn" id="invoice-close">&times;</button></div><div class="modal-body"><div class="form-group"><label>Invoice Number (Customer Phone)</label><input type="text" id="invoice-phone" placeholder="+252..." class="custom-input"></div><div class="form-group"><label>Amount</label><input type="number" id="invoice-amount" placeholder="0.00" class="custom-input" min="0" step="0.01"></div><div class="form-group"><label>Currency</label><select id="invoice-currency" class="custom-select"><option value="SLSH">SLSH</option><option value="USD">USD</option><option value="EUR">EUR</option></select></div><div class="form-group"><label>Description (Optional)</label><textarea id="invoice-description" placeholder="Enter description..." class="custom-input" rows="3"></textarea></div><button id="save-invoice-btn" class="btn btn-primary btn-full">Create Invoice</button></div></div></div>
+    <div id="notification-popup" class="notification-popup hidden"><div class="notification-content"><div class="notification-header"><h4>New Transaction</h4><button id="close-notification" class="close-btn">&times;</button></div><div id="notification-body" class="notification-body"></div><div class="notification-indicator" id="notification-dot"></div></div></div>
+
+    <div id="toast-container" class="toast-container"></div>
+    <script src="app.js?v=8"></script>
+    <script src="new_features.js?v=1"></script>
+</body>
+</html>
