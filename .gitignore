@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+
+# Secrets and local session files — never commit these
+server/.env.telethon
+server/telethon.session
+server/telethon.session-journal
+server/transactions.db
+
+# Android build output
+app/app/build/
+app/.gradle/
+app/build/
+*.apk
+*.class
+*.dex
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
