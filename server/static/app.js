@@ -94,6 +94,13 @@ window.apiFetch = apiFetch;
 function logoutToAuth(message = '') {
     accessToken = '';
     currentCompany = null;
+    dashboardInitialized = false;
+    allTransactions = [];
+    window.allTransactions = [];
+    if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+    }
     localStorage.removeItem('cashin_access_token');
     if (ws) {
         ws.close();
@@ -774,13 +781,20 @@ function bindDashboardEvents() {
 }
 
 function initDashboard() {
-    if (dashboardInitialized) return;
-    dashboardInitialized = true;
-
-    setInterval(updateClock, 1000);
     updateClock();
 
-    bindDashboardEvents();
+    if (!dashboardInitialized) {
+        dashboardInitialized = true;
+        setInterval(updateClock, 1000);
+        bindDashboardEvents();
+    }
+
+    const webhookUrlDisplay = document.getElementById('webhook-url-display');
+    if (webhookUrlDisplay && currentCompany) {
+        const baseUrl = `${window.location.protocol}//${window.location.host}`;
+        webhookUrlDisplay.value = `${baseUrl}/api/webhook/sms/${currentCompany.company_code}`;
+    }
+
     fetchTransactions();
     connectWebSocket();
     renderReport();
