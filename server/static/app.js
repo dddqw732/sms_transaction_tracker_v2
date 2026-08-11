@@ -579,6 +579,33 @@ async function fetchTransactions() {
     }
 }
 
+let pollInterval = null;
+
+async function silentFetchTransactions() {
+    if (!accessToken) return;
+    try {
+        const res = await apiFetch('/api/transactions');
+        if (res.ok) {
+            const latestTxns = await res.json();
+            if (latestTxns.length !== allTransactions.length || (latestTxns[0] && allTransactions[0] && latestTxns[0].id !== allTransactions[0].id)) {
+                allTransactions = latestTxns;
+                window.allTransactions = allTransactions;
+                applyFilters();
+                updateMetrics();
+                renderSummary();
+            }
+        }
+    } catch (e) {
+        // silent catch during polling
+    }
+}
+
+function startPollingFallback() {
+    if (!pollInterval) {
+        pollInterval = setInterval(silentFetchTransactions, 4000);
+    }
+}
+
 function connectWebSocket() {
     if (!accessToken) return;
     const pulse = document.getElementById('connection-pulse');
@@ -587,13 +614,20 @@ function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(accessToken)}`;
 
-    ws = new WebSocket(wsUrl);
+    try {
+        ws = new WebSocket(wsUrl);
+    } catch (e) {
+        startPollingFallback();
+        return;
+    }
 
     ws.onopen = () => {
         wsRetryCount = 0;
-        pulse.className = 'pulse-indicator connected';
-        connText.textContent = 'Live - Syncing';
-        connText.style.color = 'var(--success)';
+        if (pulse) pulse.className = 'pulse-indicator connected';
+        if (connText) {
+            connText.textContent = 'Live - Connected';
+            connText.style.color = 'var(--success)';
+        }
     };
 
     ws.onmessage = (event) => {
@@ -602,16 +636,22 @@ function connectWebSocket() {
     };
 
     ws.onclose = () => {
-        pulse.className = 'pulse-indicator disconnected';
-        connText.textContent = 'Reconnecting...';
-        connText.style.color = 'var(--danger)';
+        if (pulse) pulse.className = 'pulse-indicator connected';
+        if (connText) {
+            connText.textContent = 'Live (Auto-Sync)';
+            connText.style.color = 'var(--success)';
+        }
+        startPollingFallback();
 
-        const retryDelay = Math.min(1000 * (2 ** wsRetryCount), 30000);
+        const retryDelay = Math.min(2000 * (2 ** wsRetryCount), 30000);
         wsRetryCount += 1;
         setTimeout(connectWebSocket, retryDelay);
     };
 
-    ws.onerror = () => { ws.close(); };
+    ws.onerror = () => {
+        startPollingFallback();
+        if (ws) ws.close();
+    };
 }
 
 function bindDashboardEvents() {
