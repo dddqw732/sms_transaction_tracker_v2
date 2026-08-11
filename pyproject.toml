@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cash-in-transaction-tracker"
+version = "1.0.0"
+description = "Real-time SMS financial transaction tracker"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi==0.139.0",
+    "uvicorn[standard]==0.30.0",
+    "pydantic==2.13.4",
+    "python-multipart==0.0.6",
+    "websockets>=12.0",
+    "telethon==1.44.0",
+    "openpyxl==3.1.5"
+]
+
+[tool.vercel]
+entrypoint = "server.main:app"
+
+[tool.setuptools]
+packages = ["server"]
