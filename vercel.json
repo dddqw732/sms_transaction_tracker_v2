@@ -13,6 +13,8 @@
     }
   ],
   "env": {
-    "JWT_SECRET": "dev-change-me"
+    "JWT_SECRET": "dev-change-me",
+    "SUPABASE_DB_URL": "postgresql://postgres.lzwvyqnqyaacyygfnolx:10991099zxZX%40%40@aws-0-eu-west-1.pooler.supabase.com:6543/postgres",
+    "DATABASE_URL": "postgresql://postgres.lzwvyqnqyaacyygfnolx:10991099zxZX%40%40@aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
   }
 }
