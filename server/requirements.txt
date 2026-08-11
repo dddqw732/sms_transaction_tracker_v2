@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+websockets
+openpyxl
+psycopg2-binary
+PyJWT
+passlib
+bcrypt
+supabase
+cryptography
+python-dotenv
