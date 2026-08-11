@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: sms-transaction-tracker
+    env: python
+    region: frankfurt
+    buildCommand: "pip install -r server/requirements.txt"
+    startCommand: "cd server && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRE_HOURS
+        value: "24"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sms-tracker-db
+          property: connectionString
+
+databases:
+  - name: sms-tracker-db
+    databaseName: sms_tracker
+    user: sms_tracker_user
+    region: frankfurt
