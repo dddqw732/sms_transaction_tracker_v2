@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Optional
 
 import jwt
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from passlib.context import CryptContext
@@ -39,7 +40,7 @@ from sms_parser import parse_sms
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-change-me")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "24"))
+JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "720"))
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
 
@@ -200,9 +201,9 @@ def load_telethon_env() -> None:
                     os.environ[key] = value
 
 
-async def process_and_broadcast(msg_text: str, company_id: int):
+async def process_and_broadcast(msg_text: str, company_id: int) -> bool:
     if not msg_text.strip():
-        return
+        return False
 
     sender_number = "Forwarded SMS"
     sms_body = msg_text
@@ -213,7 +214,8 @@ async def process_and_broadcast(msg_text: str, company_id: int):
 
     parsed = parse_sms(sms_body, sender_number)
     if not parsed:
-        return
+        print(f"[Webhook] Could not parse SMS for company {company_id}: {sms_body[:80]}")
+        return False
 
     txn_id = database.insert_transaction(
         company_id=company_id,
@@ -231,7 +233,8 @@ async def process_and_broadcast(msg_text: str, company_id: int):
         raw_sms=parsed["raw_sms"],
     )
     if txn_id is None:
-        return
+        print(f"[Webhook] Duplicate transaction skipped for company {company_id}")
+        return True
 
     parsed["id"] = txn_id
 
@@ -244,6 +247,7 @@ async def process_and_broadcast(msg_text: str, company_id: int):
 
     database.create_notification(company_id, txn_id)
     await manager.broadcast(company_id, json.dumps(parsed, default=str))
+    return True
 
 
 @asynccontextmanager
@@ -313,6 +317,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="SMS Transaction Tracker API", lifespan=lifespan)
 
+# Enable CORS with credentials to support HttpOnly cookie authentication
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https?://.*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -322,13 +335,18 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
-async def get_current_company(authorization: Optional[str] = Header(default=None)) -> dict:
-    if not authorization or not authorization.lower().startswith("bearer "):
+async def get_current_company(authorization: Optional[str] = Header(default=None), request: Request = None) -> dict:
+    token = None
+    # Try Authorization header first
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    # Fallback to HttpOnly cookie
+    if not token and request:
+        token = request.cookies.get("access_token")
+    if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
 
-    token = authorization.split(" ", 1)[1].strip()
     payload = decode_token(token)
-
     company_id = int(payload["sub"])
     company = database.get_company_by_id(company_id)
     if not company:
@@ -394,7 +412,7 @@ def health_check():
 
 
 @app.post("/api/auth/signup")
-def signup_company(payload: SignupPayload):
+def signup_company(payload: SignupPayload, request: Request, response: Response):
     status = normalize_status(payload.status)
 
     password_hash = pwd_context.hash(payload.password)
@@ -415,6 +433,15 @@ def signup_company(payload: SignupPayload):
                 telegram_api_hash=None,
             )
             token = create_access_token(int(company["id"]), company["company_code"])
+            is_secure = request.url.scheme == "https"
+            response.set_cookie(
+                key="access_token",
+                value=token,
+                httponly=True,
+                samesite="lax",
+                secure=is_secure,
+                max_age=JWT_EXPIRE_HOURS * 3600,
+            )
             return {
                 "status": "success",
                 "company": company_to_public(company),
@@ -429,7 +456,7 @@ def signup_company(payload: SignupPayload):
 
 
 @app.post("/api/auth/login")
-def login_company(payload: LoginPayload):
+def login_company(payload: LoginPayload, request: Request, response: Response):
     company_code = payload.company_code.strip().upper()
     company = database.get_company_by_code(company_code)
     if not company:
@@ -442,6 +469,15 @@ def login_company(payload: LoginPayload):
         raise HTTPException(status_code=403, detail="Company account is suspended")
 
     token = create_access_token(int(company["id"]), company["company_code"])
+    is_secure = request.url.scheme == "https"
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=is_secure,
+        max_age=JWT_EXPIRE_HOURS * 3600,
+    )
     return {
         "status": "success",
         "access_token": token,
@@ -451,8 +487,22 @@ def login_company(payload: LoginPayload):
 
 
 @app.get("/api/auth/me")
-def auth_me(company: dict = Depends(get_current_company)):
-    return {"status": "success", "company": company_to_public(company)}
+def auth_me(request: Request, response: Response, company: dict = Depends(get_current_company)):
+    token = create_access_token(int(company["id"]), company["company_code"])
+    is_secure = request.url.scheme == "https"
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=is_secure,
+        max_age=JWT_EXPIRE_HOURS * 3600,
+    )
+    return {
+        "status": "success",
+        "company": company_to_public(company),
+        "access_token": token,
+    }
 
 
 @app.post("/api/transactions")
@@ -677,6 +727,9 @@ async def download_app():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)):
+    # Fallback to HttpOnly cookie if token not provided in query
+    if not token:
+        token = websocket.cookies.get("access_token")
     if not token:
         await websocket.close(code=4401)
         return
