@@ -4,65 +4,39 @@ from datetime import datetime, timezone, timedelta
 
 # ─── REGEX PATTERNS ──────────────────────────────────────────────────────────
 
-# 1. Reference / Transaction ID (Ref:15501107102, Tix:15189318791, TrxId:998877)
+# 1. Reference / Transaction ID (Ref:15501073192, Tix:15189318791, TrxId:998877)
 REF_PATTERN = re.compile(
     r"(?:Ref|Tix|TxID|TrxId|Reference|Id)\s*:\s*([A-Za-z0-9]+)",
     re.IGNORECASE
 )
 
-# 2. Date / Timestamp (Date: 12/08/26 10:54:59 or Tar:02/07/26 22:43:20)
+# 2. Date / Timestamp (Date: 12/08/26 10:54:59, at 12/08/26 10:50:51, Tar:02/07/26 22:43:20)
 DATE_PATTERN = re.compile(
-    r"(?:Date|Tar)\s*:\s*(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})",
+    r"(?:Date|Tar|at)\s*:?\s*(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})",
     re.IGNORECASE
 )
 
-# 3. Balance (Hadhaagaaga:SLSH 4,000.3 or Your New A/C Balance is SLSH4,000.3 or Balance: $50)
+# 3. Account Balance (Hadhaagaaga:SLSH 4,000.3 or Your Balance is SLSH1,000.3 or Balance: $50)
 BALANCE_PATTERN = re.compile(
-    r"(?:Hadhaagaaga|Balance|A/C Balance|New Balance)\s*(?:is|:)?\s*(?:SLSH|\$)?\s*([\d,]+(?:\.\d+)?)",
+    r"(?:Hadhaagaaga|Balance|A/C Balance|New Balance|New A/C Balance)\s*(?:is|:)?\s*(?:SLSH|\$|USD)?\s*([\d,]+(?:\.\d+)?)",
     re.IGNORECASE
 )
 
-# 4. Received Patterns:
-# English: SLSH2,000 Received from CABDIMUXSIN CUMAR AXMED (637803712)
-ENG_RECEIVED = re.compile(
-    r"(?:SLSH|\$)\s*([\d,]+(?:\.\d+)?)\s+Received\s+from\s+([^\(]+?)(?:\s*\(([^)]+)\))?(?:,Date|,|\.|$)",
+# 4. Received Patterns (English & Somali)
+RCV_PATTERN = re.compile(
+    r"(?:Waxaad\s+)?(?:SLSH|\$|USD)?\s*([\d,]+(?:\.\d+)?)\s*(?:ka heshay|Received from|received from|ka socda)\s+([^\.,\n]+?)(?:,Date|,at|,Tar|,|\.|$)",
     re.IGNORECASE
 )
 
-# Somali: Waxaad SLSH1,000 ka heshay CABDIMUXSIN CUMAR AXMED (637803712)
-SOM_RECEIVED = re.compile(
-    r"Waxaad\s+(?:SLSH|\$)?\s*([\d,]+(?:\.\d+)?)\s+ka heshay\s+([^\(]+?)(?:\s*\(([^)]+)\))?(?:,Date|,|\.|$)",
-    re.IGNORECASE
-)
-
-# Generic Received: $10 ka heshay 0615551234 or Received $10 from MOHAMED
-GENERIC_RECEIVED = re.compile(
-    r"(?:SLSH|\$)?\s*([\d,]+(?:\.\d+)?)\s*(?:ka heshay|received from|ka socda)\s+([^\(]+?)(?:\s*\(([^)]+)\))?(?:,Date|,|\.|$)",
-    re.IGNORECASE
-)
-
-# 5. Sent Patterns:
-# English: SLSH2,000 Sent to CABDIMUXSIN CUMAR AXMED (637803712)
-ENG_SENT = re.compile(
-    r"(?:SLSH|\$)\s*([\d,]+(?:\.\d+)?)\s+Sent\s+to\s+([^\(]+?)(?:\s*\(([^)]+)\))?(?:,Date|,|\.|$)",
-    re.IGNORECASE
-)
-
-# Somali: SLSH1,000 ayaad u dirtay CABDIMUXSIN CUMAR AXMED (637803712)
-SOM_SENT = re.compile(
-    r"(?:SLSH|\$)?\s*([\d,]+(?:\.\d+)?)\s+ayaad u dirtay\s+([^\(]+?)(?:\s*\(([^)]+)\))?(?:,Date|,|\.|$)",
-    re.IGNORECASE
-)
-
-# Generic Sent: $10 u dirtay 0615551234 or Sent $10 to MOHAMED
-GENERIC_SENT = re.compile(
-    r"(?:SLSH|\$)?\s*([\d,]+(?:\.\d+)?)\s*(?:u dirtay|sent to|paid to|bixisay)\s+([^\(]+?)(?:\s*\(([^)]+)\))?(?:,Date|,|\.|$)",
+# 5. Sent Patterns (English & Somali)
+SENT_PATTERN = re.compile(
+    r"(?:SLSH|\$|USD)?\s*([\d,]+(?:\.\d+)?)\s*(?:sent to|Sent to|ayaad u dirtay|u dirtay|bixisay|paid to)\s+([^\.,\n]+?)(?:,Date|,at|,Tar|,|\.|$)",
     re.IGNORECASE
 )
 
 
 def _parse_amount(raw: str) -> float:
-    """Parse '2,000.50' or '2000' into float."""
+    """Parse '1,000.3' or '1000' into float."""
     try:
         return float(str(raw).replace(",", ""))
     except (ValueError, AttributeError):
@@ -79,24 +53,34 @@ def _parse_timestamp(raw: str) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _clean_party(name_part: str, num_part: str = "", default_num: str = "") -> tuple[str, str | None]:
-    """Clean name and number extracted from regex match."""
-    name = (name_part or "").strip()
-    num = (num_part or "").strip() or (default_num if default_num != "Forwarded SMS" else None)
+def _extract_party(party_str: str, default_num: str = "") -> tuple[str, str | None]:
+    """Clean party name and optional phone number in parentheses."""
+    if not party_str:
+        return "Unknown", (default_num if default_num != "Forwarded SMS" else None)
 
-    # If name is purely digits, treat it as number and name
-    if name.isdigit() and not num:
-        num = name
+    party_str = party_str.strip()
 
-    if not name or name.isdigit():
-        name = num or "Unknown"
+    paren_match = re.search(r"^([^\(]+?)\s*\(([^)]+)\)", party_str)
+    if paren_match:
+        part1 = paren_match.group(1).strip()
+        part2 = paren_match.group(2).strip()
+        if part1.isdigit() and not part2.isdigit():
+            return part2, part1
+        elif not part1.isdigit() and part2.isdigit():
+            return part1, part2
+        else:
+            return part1, part2
 
-    return name, num
+    if party_str.isdigit():
+        return party_str, party_str
+    else:
+        num = default_num if (default_num and default_num != "Forwarded SMS") else None
+        return party_str, num
 
 
 def parse_sms(sms_body: str, sender_number: str = "") -> dict | None:
     """
-    Parse an SMS body and return a structured transaction dict.
+    Parse any financial SMS body (ZAAD, EVC Plus, eDahab, Sahal, M-Pesa).
     Never extracts Reference numbers or TxIDs as transaction amounts!
     """
     if not sms_body or not sms_body.strip():
@@ -132,11 +116,11 @@ def parse_sms(sms_body: str, sender_number: str = "") -> dict | None:
     bal_match = BALANCE_PATTERN.search(body)
     balance = _parse_amount(bal_match.group(1)) if bal_match else None
 
-    # ── 5. Match Structured Patterns (Received) ──────────────────────────────
-    rcv_match = ENG_RECEIVED.search(body) or SOM_RECEIVED.search(body) or GENERIC_RECEIVED.search(body)
+    # ── 5. Match Received Patterns ───────────────────────────────────────────
+    rcv_match = RCV_PATTERN.search(body)
     if rcv_match:
         amount = _parse_amount(rcv_match.group(1))
-        name, num = _clean_party(rcv_match.group(2), rcv_match.group(3), sender_number)
+        name, num = _extract_party(rcv_match.group(2), sender_number)
         return {
             "amount": amount,
             "currency": currency,
@@ -152,11 +136,11 @@ def parse_sms(sms_body: str, sender_number: str = "") -> dict | None:
             "raw_sms": sms_body,
         }
 
-    # ── 6. Match Structured Patterns (Sent) ──────────────────────────────────
-    sent_match = ENG_SENT.search(body) or SOM_SENT.search(body) or GENERIC_SENT.search(body)
+    # ── 6. Match Sent Patterns ───────────────────────────────────────────────
+    sent_match = SENT_PATTERN.search(body)
     if sent_match:
         amount = _parse_amount(sent_match.group(1))
-        name, num = _clean_party(sent_match.group(2), sent_match.group(3))
+        name, num = _extract_party(sent_match.group(2))
         return {
             "amount": amount,
             "currency": currency,
@@ -172,11 +156,11 @@ def parse_sms(sms_body: str, sender_number: str = "") -> dict | None:
             "raw_sms": sms_body,
         }
 
-    # ── 7. Safe Fallback (Avoid matching Ref/TxID as amount!) ────────────────
-    clean_body_for_amount = REF_PATTERN.sub("", body)
-    clean_body_for_amount = DATE_PATTERN.sub("", clean_body_for_amount)
+    # ── 7. Safe Fallback (Avoid matching Ref/TxID as amount) ─────────────────
+    clean_body = REF_PATTERN.sub("", body)
+    clean_body = DATE_PATTERN.sub("", clean_body)
 
-    amount_match = re.search(r"(?:SLSH|\$)\s*([\d,]+(?:\.\d+)?)", clean_body_for_amount)
+    amount_match = re.search(r"(?:SLSH|\$|USD)\s*([\d,]+(?:\.\d+)?)", clean_body)
     if amount_match:
         amt_val = _parse_amount(amount_match.group(1))
         if amt_val > 0:
