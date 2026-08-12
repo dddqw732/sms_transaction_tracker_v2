@@ -18,6 +18,18 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "-q"])
     import requests
 
+
+def requests_retry_call(func, *args, retries=5, delay=1, **kwargs):
+    """Execute HTTP request with retries on network failures."""
+    for attempt in range(retries):
+        try:
+            return func(*args, **kwargs)
+        except (requests.exceptions.RequestException, ConnectionError) as exc:
+            if attempt == retries - 1:
+                raise exc
+            time.sleep(delay * (attempt + 1))
+
+
 def create_repo(username, token, repo_name, private=False):
     """Create a new GitHub repository."""
     print(f"\nCreating repository '{repo_name}' for @{username}...")
@@ -32,21 +44,22 @@ def create_repo(username, token, repo_name, private=False):
         "private": private,
         "auto_init": False
     }
-    r = requests.post("https://api.github.com/user/repos", headers=headers, json=payload)
+    r = requests_retry_call(requests.post, "https://api.github.com/user/repos", headers=headers, json=payload)
     if r.status_code == 201:
         data = r.json()
         print(f"  Repository created: {data['html_url']}")
         return data
     elif r.status_code == 422:
         print(f"  Repository '{repo_name}' already exists — using it.")
-        r2 = requests.get(f"https://api.github.com/repos/{username}/{repo_name}", headers=headers)
+        r2 = requests_retry_call(requests.get, f"https://api.github.com/repos/{username}/{repo_name}", headers=headers)
         return r2.json()
     else:
         print(f"  ERROR creating repo: {r.status_code} - {r.text}")
         sys.exit(1)
 
-def upload_file(username, token, repo_name, file_path, content, message="Initial commit"):
-    """Upload a single file to GitHub via Contents API."""
+
+def upload_file(username, token, repo_name, file_path, content, message="Update code with multi-format SMS parser and session persistence"):
+    """Upload a single file to GitHub via Contents API with retries."""
     encoded = base64.b64encode(content).decode("utf-8")
     headers = {
         "Authorization": f"token {token}",
@@ -57,20 +70,34 @@ def upload_file(username, token, repo_name, file_path, content, message="Initial
     
     # Check if file exists already (to get SHA for update)
     sha = None
-    r = requests.get(url, headers=headers)
-    if r.status_code == 200:
-        sha = r.json().get("sha")
+    try:
+        r = requests_retry_call(requests.get, url, headers=headers)
+        if r.status_code == 200:
+            sha = r.json().get("sha")
+    except Exception:
+        pass
     
     payload = {"message": message, "content": encoded}
     if sha:
         payload["sha"] = sha
     
-    r = requests.put(url, headers=headers, json=payload)
-    if r.status_code in (200, 201):
-        return True
-    else:
-        print(f"  WARN: Failed to upload {file_path}: {r.status_code} {r.text[:100]}")
-        return False
+    for attempt in range(4):
+        try:
+            r = requests.put(url, headers=headers, json=payload, timeout=20)
+            if r.status_code in (200, 201):
+                return True
+            elif r.status_code == 409: # Conflict / SHA mismatch, re-fetch SHA
+                r_sha = requests.get(url, headers=headers, timeout=20)
+                if r_sha.status_code == 200:
+                    payload["sha"] = r_sha.json().get("sha")
+            else:
+                time.sleep(1)
+        except Exception:
+            time.sleep(1.5)
+            
+    print(f"  WARN: Failed to upload {file_path}")
+    return False
+
 
 def collect_files(base_dir, skip_dirs=None, skip_extensions=None, max_size_mb=10):
     """Walk the directory and collect all relevant files."""
@@ -80,7 +107,6 @@ def collect_files(base_dir, skip_dirs=None, skip_extensions=None, max_size_mb=10
     
     files = {}
     for root, dirs, filenames in os.walk(base_dir):
-        # Prune skipped dirs in-place to stop recursion
         dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith(".")]
         
         for fname in filenames:
@@ -106,6 +132,7 @@ def collect_files(base_dir, skip_dirs=None, skip_extensions=None, max_size_mb=10
     
     return files
 
+
 def main():
     if len(sys.argv) < 4:
         print("Usage: python push_to_github.py <username> <token> <repo_name>")
@@ -121,16 +148,13 @@ def main():
     print("  GitHub Push Tool - SMS Transaction Tracker")
     print("=" * 60)
     
-    # Create the repo
     repo_data = create_repo(username, token, repo_name, private=False)
     repo_url = repo_data.get("html_url", f"https://github.com/{username}/{repo_name}")
     
-    # Collect all files
     print(f"\nScanning project files in: {project_dir}")
     files = collect_files(project_dir)
     print(f"  Found {len(files)} files to upload.")
     
-    # Upload files
     print(f"\nUploading files to GitHub...")
     success_count = 0
     fail_count = 0
@@ -143,7 +167,7 @@ def main():
         else:
             print("FAILED")
             fail_count += 1
-        time.sleep(0.15)  # Rate limit courtesy delay
+        time.sleep(0.2)
     
     print("\n" + "=" * 60)
     print(f"  Done! {success_count} files uploaded, {fail_count} failed.")
