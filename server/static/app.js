@@ -78,7 +78,8 @@ async function apiFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
 
-    const response = await fetch(url, { ...options, headers });
+    const fetchOpts = { credentials: 'include', ...options, headers };
+    const response = await fetch(url, fetchOpts);
 
     if (response.status === 401 || response.status === 403) {
         if (url !== '/api/auth/login' && url !== '/api/auth/signup' && url !== '/api/auth/me') {
@@ -120,21 +121,23 @@ function setCompanyChip() {
 async function bootstrapAuth() {
     bindAuthUI();
 
-    if (!accessToken) {
-        showView('landing');
-        return;
-    }
-
     try {
         const res = await apiFetch('/api/auth/me');
         if (!res.ok) throw new Error('Session invalid');
         const payload = await readApiPayload(res);
+        if (payload.access_token) {
+            accessToken = payload.access_token;
+            localStorage.setItem('cashin_access_token', accessToken);
+        }
         currentCompany = payload.company;
         setCompanyChip();
         showView('dashboard');
         initDashboard();
     } catch {
-        logoutToAuth();
+        if (accessToken) {
+            localStorage.removeItem('cashin_access_token');
+            accessToken = '';
+        }
         showView('landing');
     }
 }
@@ -179,6 +182,7 @@ function bindAuthUI() {
         try {
             const res = await fetch('/api/auth/login', {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ company_code: companyCode, password })
             });
@@ -218,6 +222,7 @@ function bindAuthUI() {
         try {
             const res = await fetch('/api/auth/signup', {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
@@ -283,7 +288,9 @@ function getProviderLogo(provider) {
     return null;
 }
 
-function createTransactionCard(txn) {
+let latestTxnId = null;
+
+function createTransactionCard(txn, isLatest = false) {
     const isReceived = txn.type === 'Received';
     const typeClass = isReceived ? 'received' : 'sent';
     const amountSign = isReceived ? '+' : '-';
@@ -298,9 +305,11 @@ function createTransactionCard(txn) {
 
     const primaryName = isReceived ? (txn.sender || 'Unknown') : (txn.receiver || 'Unknown');
     const primaryNumber = isReceived ? txn.sender_number : txn.receiver_number;
+    const latestClass = isLatest ? ' txn-latest' : '';
 
     return `
-        <div class="txn-card" onclick="showTxnDetails(${txn.id})">
+        <div class="txn-card${latestClass}" onclick="showTxnDetails(${txn.id})">
+            ${isLatest ? '<div class="txn-new-badge">NEW</div>' : ''}
             <div class="txn-icon ${iconClass}">${iconHtml}</div>
             <div class="txn-details">
                 <div class="txn-sender">
@@ -331,7 +340,7 @@ function renderLedger() {
     } else {
         ledgerEmpty.classList.add('hidden');
         ledgerList.classList.remove('hidden');
-        ledgerList.innerHTML = filteredTransactions.map(createTransactionCard).join('');
+        ledgerList.innerHTML = filteredTransactions.map((txn, i) => createTransactionCard(txn, i === 0 && txn.id === latestTxnId)).join('');
     }
 }
 
@@ -346,7 +355,7 @@ function renderDashboardRecent() {
         dashboardList.innerHTML = '';
     } else {
         dashboardEmpty.classList.add('hidden');
-        dashboardList.innerHTML = recent.map(createTransactionCard).join('');
+        dashboardList.innerHTML = recent.map((txn, i) => createTransactionCard(txn, i === 0 && txn.id === latestTxnId)).join('');
     }
 }
 
@@ -495,17 +504,46 @@ function showToast(txn) {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
+    const isReceived = txn.type === 'Received';
     const toast = document.createElement('div');
-    toast.className = `toast ${txn.type === 'Received' ? 'received' : 'sent'}`;
+    toast.className = `toast ${isReceived ? 'received' : 'sent'}`;
 
-    const sign = txn.type === 'Received' ? '+' : '-';
+    const sign = isReceived ? '+' : '-';
     const displayAmount = formatAmount(txn.amount, txn.currency);
-    const name = txn.type === 'Received' ? txn.sender : txn.receiver;
+    const name = isReceived ? (txn.sender || 'Unknown') : (txn.receiver || 'Unknown');
+    const providerName = txn.provider || '';
+    const logoUrl = getProviderLogo(txn.provider);
+    const iconHtml = logoUrl
+        ? `<img src="${logoUrl}" alt="${providerName}" style="width:28px;height:28px;object-fit:contain;">`
+        : `<span style="font-size:20px;">${isReceived ? '📥' : '📤'}</span>`;
 
-    toast.innerHTML = `<div class="toast-body"><div class="toast-title">${name || 'Transaction'}</div><div class="toast-subtitle">${sign}${displayAmount}</div></div>`;
+    toast.innerHTML = `
+        <div class="toast-icon">${iconHtml}</div>
+        <div class="toast-body">
+            <div class="toast-title">${name}</div>
+            <div class="toast-subtitle">
+                <span style="font-size:15px;font-weight:700;color:${isReceived ? 'var(--success)' : 'var(--danger)'}">${sign}${displayAmount}</span>
+                ${providerName ? `<span>${providerName}</span>` : ''}
+            </div>
+        </div>
+        <button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:18px;line-height:1;padding:0 0 0 8px;">✕</button>
+    `;
+
+    // Browser notification if permission granted
+    if (Notification && Notification.permission === 'granted') {
+        new Notification(`${isReceived ? '📥 Received' : '📤 Sent'} — ${providerName}`, {
+            body: `${name}: ${sign}${displayAmount}`,
+            icon: logoUrl || '/logo.png',
+            tag: String(txn.id || Date.now())
+        });
+    }
 
     container.appendChild(toast);
-    setTimeout(() => toast.remove(), 4000);
+    // Slide out animation then remove
+    setTimeout(() => {
+        toast.style.animation = 'toast-out 0.4s ease forwards';
+        setTimeout(() => toast.remove(), 400);
+    }, 5000);
 }
 window.showToast = showToast;
 
@@ -541,6 +579,7 @@ function handleNewTransaction(txn) {
     if (txn.event === 'cleared') {
         allTransactions = [];
         window.allTransactions = allTransactions;
+        latestTxnId = null;
         applyFilters();
         updateMetrics();
         renderSummary();
@@ -552,6 +591,7 @@ function handleNewTransaction(txn) {
 
     allTransactions.unshift(txn);
     window.allTransactions = allTransactions;
+    latestTxnId = txn.id;
     applyFilters();
     updateMetrics();
     renderSummary();
@@ -589,12 +629,24 @@ async function fetchTransactions() {
 let pollInterval = null;
 
 async function silentFetchTransactions() {
-    if (!accessToken) return;
     try {
         const res = await apiFetch('/api/transactions');
         if (res.ok) {
             const latestTxns = await res.json();
-            if (latestTxns.length !== allTransactions.length || (latestTxns[0] && allTransactions[0] && latestTxns[0].id !== allTransactions[0].id)) {
+            const oldIds = new Set(allTransactions.map(t => t.id));
+            const newTxns = latestTxns.filter(t => !oldIds.has(t.id));
+
+            if (newTxns.length > 0) {
+                allTransactions = latestTxns;
+                window.allTransactions = allTransactions;
+                latestTxnId = newTxns[0].id;
+
+                applyFilters();
+                updateMetrics();
+                renderSummary();
+
+                newTxns.slice(0, 5).forEach(txn => showToast(txn));
+            } else if (latestTxns.length !== allTransactions.length) {
                 allTransactions = latestTxns;
                 window.allTransactions = allTransactions;
                 applyFilters();
@@ -609,7 +661,7 @@ async function silentFetchTransactions() {
 
 function startPollingFallback() {
     if (!pollInterval) {
-        pollInterval = setInterval(silentFetchTransactions, 4000);
+        pollInterval = setInterval(silentFetchTransactions, 3000);
     }
 }
 
@@ -797,7 +849,12 @@ function initDashboard() {
 
     fetchTransactions();
     connectWebSocket();
+    startPollingFallback();
     renderReport();
+
+    if (window.Notification && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
 
     window.dispatchEvent(new Event('cashin-dashboard-ready'));
 }
